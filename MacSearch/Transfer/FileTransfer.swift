@@ -55,6 +55,8 @@ final class FileTransfer: Sendable {
 
 private struct CollisionBudgetSpent: Error {}
 
+private struct SizeMismatch: Error {}
+
 private struct OwnFile {
     let fd: Int32
     let path: String
@@ -81,6 +83,12 @@ private final class Job {
     /// The app's own, not yet published file; the only file Opruimen may remove.
     var own: OwnFile?
     var sourceFd: Int32?
+    /// Metadata, flush and source-removal problems; the transfer itself went on (F15, F17).
+    var warnings: [String] = []
+    /// A move whose flush failed: the file is published but the source must stay (F15).
+    var flushFailed = false
+    /// A move that kept its source ends as `copied` (F15, F17).
+    var sourceKept = false
 
     var sourcePath: String { file.url.path }
 
@@ -163,7 +171,7 @@ private final class Job {
             break
         }
         published()
-        if mode == .move { try ops.unlink(sourcePath) }
+        removeSource()
         return try finish()
     }
 
@@ -187,12 +195,12 @@ private final class Job {
             try store.updateAction(id: id, result: .pending, destPath: dest, tempPath: .clear, error: nil)
         } catch {
             // The complete file stays and is reported at the next start (F19d); the source is kept.
-            own = nil
-            let outcome = TransferOutcome(result: mode == .move ? .copied : successResult, destPath: dest, warning: nil)
-            throw StoreWriteFailed(fileProcessed: true, outcome: outcome)
+            published()
+            sourceKept = true
+            throw StoreWriteFailed(fileProcessed: true, outcome: successOutcome)
         }
         published()
-        if mode == .move { try ops.unlink(sourcePath) }
+        removeSource()
         return try finish()
     }
 
@@ -260,15 +268,46 @@ private final class Job {
         }
     }
 
-    /// B4 and C4: data, extended attributes and dates through the descriptors; for a move the flush.
+    /// B4 and C4: data, then extended attributes and dates through the descriptors (a failure there is a
+    /// warning); for a move the size check and the flush.
     func copy(to fd: Int32) throws {
         let source = try ops.openRead(sourcePath)
         sourceFd = source
         try ops.copyData(from: source, to: fd)
-        try ops.copyXattrs(from: source, to: fd)
-        let dates = try ops.dates(path: sourcePath)
-        try ops.setDates(fd, modified: dates.modified, created: dates.created)
-        if mode == .move { try ops.fullFsync(fd) }
+        do {
+            try ops.copyXattrs(from: source, to: fd)
+        } catch {
+            warnings.append("Extended attributes niet overgenomen: \(Self.message(error))")
+        }
+        do {
+            let dates = try ops.dates(path: sourcePath)
+            try ops.setDates(fd, modified: dates.modified, created: dates.created)
+        } catch {
+            warnings.append("Datums niet overgenomen: \(Self.message(error))")
+        }
+        guard mode == .move else { return }
+        guard try ops.size(fd: fd) == ops.size(fd: source) else { throw SizeMismatch() }
+        do {
+            try ops.fullFsync(fd)
+        } catch {
+            flushFailed = true
+            warnings.append("Kopie niet bevestigd op schijf, de bron is blijven staan: \(Self.message(error))")
+        }
+    }
+
+    /// B6, and C5 after the completion write: a move removes its source, unless the flush failed.
+    func removeSource() {
+        guard mode == .move else { return }
+        guard !flushFailed else {
+            sourceKept = true
+            return
+        }
+        do {
+            try ops.unlink(sourcePath)
+        } catch {
+            sourceKept = true
+            warnings.append("Bron niet verwijderd: \(Self.message(error))")
+        }
     }
 
     /// The own file now carries the final name and is no longer the app's to remove.
@@ -277,12 +316,18 @@ private final class Job {
         own = nil
     }
 
-    var successResult: ActionResult {
-        mode == .move ? .moved : (dest == desiredPath ? .copied : .renamed)
+    var successOutcome: TransferOutcome {
+        let result: ActionResult =
+            switch mode {
+            case .move: sourceKept ? .copied : .moved
+            case .copy: dest == desiredPath ? .copied : .renamed
+            }
+        return TransferOutcome(
+            result: result, destPath: dest, warning: warnings.isEmpty ? nil : warnings.joined(separator: "; "))
     }
 
     func finish() throws(StoreWriteFailed) -> TransferOutcome {
-        let outcome = TransferOutcome(result: successResult, destPath: dest, warning: nil)
+        let outcome = successOutcome
         try record(outcome, tempPath: .clear)
         return outcome
     }
@@ -350,6 +395,7 @@ private final class Job {
         switch error {
         case let failure as POSIXFailure: String(cString: strerror(failure.errno))
         case is CollisionBudgetSpent: "Geen vrije doelnaam na \(FileTransfer.maxCollisions) pogingen"
+        case is SizeMismatch: "De kopie is niet even groot als de bron"
         default: String(describing: error)
         }
     }
