@@ -6,7 +6,7 @@ Taak 14 van PLANS/idea-263-plan r9. Spec: SPECS/idea-263-spec r8, §7.
 |---|---|---|
 | AC6 Release zonder waarschuwingen | PASS (2026-10-16) | agent |
 | AC7 verplaatsen naar APFS- en exFAT-dmg | PASS (2026-10-16) | agent |
-| AC5 echte Mac met `janpeter visser`, inclusief TCC | open | JP |
+| AC5 echte Mac, inclusief TCC | PASS met afwijking (2026-10-16), zie hieronder | JP |
 
 ## AC6: Release bouwt zonder waarschuwingen
 
@@ -56,6 +56,32 @@ De `._*`-bestanden op exFAT zijn AppleDouble-bestanden van macOS zelf: exFAT ken
 extended attributes, en het bestand draagt `com.apple.provenance`. MacSearch maakt ze niet aan.
 
 ## AC5: proef van JP op de echte Mac
+
+### Resultaat (2026-10-16)
+
+JP draaide de app op de echte Mac met de echte database. Daarin staat één run (run 1):
+- een bron op het netwerkvolume `/Volumes/Public` en een bestemming op hetzelfde volume, allebei
+  gekozen met **Kies…**. Zonder eerdere geschiedenis kan een map alleen via het NSOpenPanel in
+  het formulier komen;
+- een eigen keyword van JP; modus kopiëren;
+- 2 gevonden, 2 geselecteerd, `scan_complete = 1`;
+- 2× `copied` in `<bestemming>/<keyword>/2026-10-16/`, `temp_path` leeg, status `completed`.
+
+**Afwijking, door JP besloten op 2026-10-16:** deze netwerkvolume-run telt als AC5. Wat het
+protocol hieronder anders vraagt:
+
+| Protocol | Uitgevoerd | Gevolg |
+|---|---|---|
+| Bron onder `~/Desktop` of `~/Documents`, met de TCC-vraag | Bron op het netwerkvolume | TCC voor Desktop/Documents valt buiten AC5 |
+| Geweigerde toestemming geeft een run die als onvolledig is gemarkeerd | Niet uitgevoerd | Valt buiten AC5 |
+| Keyword `janpeter visser` | Een eigen keyword van JP | Geen |
+| Twee bestanden uitvinken | 2 van 2 geselecteerd | Uitvinken is bewezen in de rooktest van taak 13 |
+| Een klik op de geschiedenisrij vult het formulier | Niet apart gemeld | Bewezen in de rooktest van taak 13 en bij AC7 |
+
+Volgens JP zijn ook Quick Look-playback, **Kopieer pad** en **Toon in Finder** geprobeerd. Een
+uitkomst per knop is niet doorgegeven en staat dus niet in dit runbook.
+
+### Protocol uit het plan
 
 Start de Release-build zelf vanuit Finder of met `open`, zodat MacSearch zelf de TCC-vraag stelt:
 
