@@ -1,0 +1,67 @@
+name: MacSearch
+
+options:
+  bundleIdPrefix: nl.jp-visser
+  deploymentTarget:
+    macOS: "27.0"
+  createIntermediateGroups: true
+
+packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift
+    from: 7.0.0
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_UPCOMING_FEATURE_NONISOLATED_NONSENDING_BY_DEFAULT: "NO"
+    CODE_SIGN_IDENTITY: "-"
+    CODE_SIGN_STYLE: Manual
+    DEVELOPMENT_TEAM: ""
+    MACOSX_DEPLOYMENT_TARGET: "27.0"
+  configs:
+    Release:
+      SWIFT_TREAT_WARNINGS_AS_ERRORS: "YES"
+      GCC_TREAT_WARNINGS_AS_ERRORS: "YES"
+
+targets:
+  MacSearch:
+    type: application
+    platform: macOS
+    sources: [MacSearch]
+    dependencies:
+      - package: GRDB
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: nl.jp-visser.MacSearch
+        ENABLE_APP_SANDBOX: "NO"
+        GENERATE_INFOPLIST_FILE: "YES"
+        INFOPLIST_KEY_CFBundleDisplayName: MacSearch
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.utilities
+        MARKETING_VERSION: 0.1.0
+        CURRENT_PROJECT_VERSION: 1
+
+  # Hosted unit tests: GRDB is linked only into the app; the tests see GRDB and
+  # the app code through the bundle loader.
+  MacSearchTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources: [MacSearchTests]
+    dependencies:
+      - target: MacSearch
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: nl.jp-visser.MacSearchTests
+        GENERATE_INFOPLIST_FILE: "YES"
+        TEST_HOST: $(BUILT_PRODUCTS_DIR)/MacSearch.app/Contents/MacOS/MacSearch
+        BUNDLE_LOADER: $(TEST_HOST)
+
+schemes:
+  MacSearch:
+    build:
+      targets:
+        MacSearch: all
+        MacSearchTests: [test]
+    test:
+      targets: [MacSearchTests]
